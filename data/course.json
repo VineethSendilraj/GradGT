@@ -385,16 +385,6 @@
       ]
     },
     {
-      "id": "CS 4475",
-      "name": "",
-      "short_name": "",
-      "x": "5",
-      "y": "12",
-      "threads": [
-        "media"
-      ]
-    },
-    {
       "id": "CS 4590",
       "name": "Computer Audio",
       "short_name": "",
@@ -571,6 +561,26 @@
       "y": "17",
       "threads": [
         "devices",
+        "sys-arch"
+      ]
+    },
+    {
+      "id": "CS 3300",
+      "name": "Intro to Software Engr",
+      "short_name": "",
+      "x": "5",
+      "y": "18",
+      "threads": [
+        "sys-arch"
+      ]
+    },
+    {
+      "id": "CS 4240",
+      "name": "Compilers & Interpreters",
+      "short_name": "",
+      "x": "5",
+      "y": "19.5",
+      "threads": [
         "sys-arch"
       ]
     },
@@ -1054,7 +1064,7 @@
     },
     {
       "from": "CS 1301",
-      "to": "CS 4475"
+      "to": "CS 4460"
     },
     {
       "from": "CS 1301",
@@ -1149,12 +1159,20 @@
       "to": "CS 3300"
     },
     {
+      "from": "CS 2340",
+      "to": "CS 4470"
+    },
+    {
+      "from": "CS 2340",
+      "to": "&5"
+    },
+    {
       "from": "CS 3451",
       "to": "CS 4455"
     },
     {
       "from": "CS 3451",
-      "to": "CS 4455"
+      "to": "CS 4496"
     },
     {
       "from": "&4",
@@ -1213,6 +1231,10 @@
       "to": "CS 3220"
     },
     {
+      "from": "ECE 2031",
+      "to": "CS 3651"
+    },
+    {
       "from": "CS 4400",
       "to": "CS 4420"
     },
@@ -1235,6 +1257,10 @@
     {
       "from": "CS 3210",
       "to": "CS 4210"
+    },
+    {
+      "from": "CS 3210",
+      "to": "CS 4238"
     },
     {
       "from": "CS 2200",
@@ -1297,8 +1323,16 @@
       "to": "CS 4262"
     },
     {
+      "from": "CS 3251",
+      "to": "CS 4251"
+    },
+    {
       "from": "CS 3235",
       "to": "CS 4243"
+    },
+    {
+      "from": "CS 3235",
+      "to": "|4"
     },
     {
       "from": "CS 3237",
