@@ -585,60 +585,6 @@ const PreReqChart = () => {
     return prerequisites.has(courseId);
   };
 
-  // Function to get prerequisites with logical relationships
-  const getPrerequisites = (courseId: string) => {
-    const prereqGroups: {
-      direct: string[];
-      andGroups: { [key: string]: string[] };
-      orGroups: { [key: string]: string[] };
-    } = {
-      direct: [],
-      andGroups: {},
-      orGroups: {}
-    };
-
-    // First, find all direct connections to AND/OR nodes
-    const directPrereqs = prereqs.filter(prereq => prereq.to === courseId);
-
-    directPrereqs.forEach(prereq => {
-      const fromCourse = courses.find(c => c.id === prereq.from);
-
-      if (!fromCourse) return;
-
-      // If it's an AND node (starts with &)
-      if (fromCourse.id.startsWith('&')) {
-        // Find all prerequisites of this AND node
-        prereqGroups.andGroups[fromCourse.id] = prereqs
-            .filter(p => p.to === fromCourse.id)
-            .map(p => p.from);
-        for (let i = 0 ; i < prereqGroups.andGroups[fromCourse.id].length; i++) {
-          if (prereqGroups.andGroups[fromCourse.id][i].startsWith("&")) {
-            prereqGroups.andGroups[fromCourse.id].splice(i, 1);
-            let indirect = getPrerequisites(fromCourse.id);
-            for (let key in indirect.andGroups) {
-              let indirectCourses = indirect.andGroups[key]
-              for (let c in indirectCourses)
-                prereqGroups.andGroups[fromCourse.id].push(indirectCourses[c]);
-            }
-          }
-        }
-      }
-      // If it's an OR node (starts with |)
-      else if (fromCourse.id.startsWith('|')) {
-        // Find all prerequisites of this OR node
-        prereqGroups.orGroups[fromCourse.id] = prereqs
-            .filter(p => p.to === fromCourse.id)
-            .map(p => p.from);
-      }
-      // Direct prerequisite
-      else {
-        prereqGroups.direct.push(fromCourse.id);
-      }
-    });
-    // console.log(prereqGroups)
-    return prereqGroups;
-  };
-
   // Update course rendering to include highlighting
   const renderCourse = (course: Course) => {
     const isHighlighted = shouldHighlight(course.id);
@@ -810,12 +756,13 @@ const PreReqChart = () => {
     if (left + 500 > window.innerWidth) {
       left = courseX - (BOX_WIDTH / 2 * transform.scale) - 520;
     }
-    return { left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }
-    // return {
-    //   left: `${left}px`,
-    //   top: `${top}px`,
-    //   transform: 'none'
-    // };
+
+    // Use both left and top for positioning
+    return {
+      left: `${left}px`,
+      top: `${top}px`,
+      transform: 'none'
+    };
   };
 
   // Reset handler that uses the same centering logic
@@ -1093,58 +1040,6 @@ const PreReqChart = () => {
                 </div>
               ) : enrollmentData ? (
                 <div className="space-y-6">
-                  {/*<div>*/}
-                  {/*  <h3 className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>*/}
-                  {/*    Prerequisites*/}
-                  {/*  </h3>*/}
-                  {/*  <div className="space-y-2">*/}
-                  {/*    {(() => {*/}
-                  {/*      const prereqGroups = getPrerequisites(selectedCourse.id);*/}
-
-                  {/*      if (prereqGroups.direct.length === 0 &&*/}
-                  {/*          Object.keys(prereqGroups.andGroups).length === 0 &&*/}
-                  {/*          Object.keys(prereqGroups.orGroups).length === 0) {*/}
-                  {/*          return <p className="text-gray-500 dark:text-gray-400">No*/}
-                  {/*              prerequisites</p>;*/}
-                  {/*      }*/}
-
-                  {/*      return (*/}
-                  {/*        <div className="space-y-3">*/}
-                  {/*          {prereqGroups.direct.length > 0 && (*/}
-                  {/*            <div>*/}
-                  {/*              <p className="text-sm text-gray-500 dark:text-gray-400">Required:</p>*/}
-                  {/*              <ul className="list-disc pl-5 mt-1">*/}
-                  {/*                {prereqGroups.direct.map(courseId => (*/}
-                  {/*                  <li key={courseId}>{courseId}</li>*/}
-                  {/*                ))}*/}
-                  {/*              </ul>*/}
-                  {/*            </div>*/}
-                  {/*          )}*/}
-
-                  {/*          {Object.entries(prereqGroups.andGroups).map(([nodeId, courses]) => (*/}
-                  {/*            <div key={nodeId}>*/}
-                  {/*              <p className="text-sm text-gray-500 dark:text-gray-400">Must*/}
-                  {/*                  complete all:</p>*/}
-                  {/*              <p className="pl-5 mt-1">*/}
-                  {/*                  {courses.join(' AND ')}*/}
-                  {/*              </p>*/}
-                  {/*            </div>*/}
-                  {/*          ))}*/}
-
-                  {/*          {Object.entries(prereqGroups.orGroups).map(([nodeId, courses]) => (*/}
-                  {/*            <div key={nodeId}>*/}
-                  {/*              <p className="text-sm text-gray-500 dark:text-gray-400">Must complete one of:</p>*/}
-                  {/*              <p className="pl-5 mt-1">*/}
-                  {/*                {courses.join(' OR ')}*/}
-                  {/*              </p>*/}
-                  {/*            </div>*/}
-                  {/*          ))}*/}
-                  {/*        </div>*/}
-                  {/*      );*/}
-                  {/*    })()}*/}
-                  {/*  </div>*/}
-                  {/*</div>*/}
-
                   <div>
                     <h3 className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                       Enrollment History
