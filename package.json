@@ -3,14 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "prefetch": "ts-node --project tsconfig.node.json scripts/prefetchAllCourses.ts"
   },
   "dependencies": {
-    "@next/swc-win32-x64-msvc": "15.1.4",
     "@swc/core": "^1.4.0",
     "@swc/helpers": "^0.5.0",
     "class-variance-authority": "^0.7.1",
