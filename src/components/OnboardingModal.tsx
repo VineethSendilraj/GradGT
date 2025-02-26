@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 
 interface OnboardingModalProps {
   darkMode: boolean;
@@ -6,6 +6,23 @@ interface OnboardingModalProps {
 }
 
 const OnboardingModal = ({ darkMode, onClose }: OnboardingModalProps) => {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    // Check on initial load
+    checkMobile();
+    
+    // Add event listener for window resize
+    window.addEventListener('resize', checkMobile);
+    
+    // Cleanup
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
       <div className={`bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-lg mx-4 ${
@@ -20,14 +37,24 @@ const OnboardingModal = ({ darkMode, onClose }: OnboardingModalProps) => {
             <h3 className={`font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
               How to use:
             </h3>
-            <ul className={`list-disc pl-5 space-y-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-              <li>Click on any course box to view enrollment data</li>
-              <li>Use the zoom controls to adjust the view</li>
-              <li>Drag the chart to pan around</li>
-              <li>Follow the arrows to understand prerequisites</li>
-              <li>Toggle dark mode for better viewing at night</li>
-              <li>Use the sidebar to filter course threads</li>
-            </ul>
+            {isMobile ? (
+              <ul className={`list-disc pl-5 space-y-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                <li>Tap on any course box to view enrollment data</li>
+                <li>Drag with one finger to pan around</li>
+                <li>Pinch with two fingers to zoom in/out</li>
+                <li>Use the filter button to show/hide course threads</li>
+                <li>Follow the arrows to understand prerequisites</li>
+              </ul>
+            ) : (
+              <ul className={`list-disc pl-5 space-y-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                <li>Click on any course box to view enrollment data</li>
+                <li>Use the zoom controls or mouse wheel to adjust the view</li>
+                <li>Drag the chart to pan around</li>
+                <li>Follow the arrows to understand prerequisites</li>
+                <li>Toggle dark mode for better viewing at night</li>
+                <li>Use the sidebar to filter course threads</li>
+              </ul>
+            )}
           </div>
           <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
             Note: Diamond shapes represent AND/OR logic for prerequisites

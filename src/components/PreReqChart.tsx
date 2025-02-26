@@ -7,8 +7,11 @@ import type {CourseEnrollmentData} from '@/lib/api';
 import {fetchCourseData} from '@/lib/api';
 import {prefetchAllCourseData, type PrefetchedData} from '@/lib/prefetch';
 import OnboardingModal from './OnboardingModal';
-
-type CourseType = 'intel' | 'cyber' | 'info' | 'people' | 'media' | 'theory' | 'mod-sim' | 'sys-arch' | 'devices' | 'required';
+import GuidedTour from './GuidedTour';
+import ThreadBubbles from './ThreadBubbles';
+import { CourseType, Thread, Theme, ThemeModes } from './types';
+import { House, ZoomIn, ZoomOut, HelpCircle } from 'lucide-react';
+import CourseInfoCard from './CourseInfoCard';
 
 interface Point {
   x: number;
@@ -31,24 +34,6 @@ interface Prereq {
   to: string;
   fromSide?: 'left' | 'right' | 'top' | 'bottom';
   toSide?: 'left' | 'right' | 'top' | 'bottom';
-}
-
-interface Theme {
-    bg: string;
-    text: string;
-    textSecondary: string;
-}
-
-interface ThemeModes {
-    light: Theme;
-    dark: Theme;
-}
-
-interface Thread {
-    name: CourseType;
-    formalName: string;
-    theme: ThemeModes;
-    show: boolean;
 }
 
 interface CourseData {
@@ -229,6 +214,7 @@ const PreReqChart = () => {
   const INITIAL_ZOOM = 0.35;
 
   const [showOnboarding, setShowOnboarding] = useState(true);
+  const [showGuidedTour, setShowGuidedTour] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: INITIAL_ZOOM });
   const [isDragging, setIsDragging] = useState(false);
@@ -244,7 +230,11 @@ const PreReqChart = () => {
   const [prefetchErrors, setPrefetchErrors] = useState<Record<string, boolean>>({});
   const [filters, setFilters] = useState<Thread[]>(threads);
   const [highlightedCourse, setHighlightedCourse] = useState<string | null>(null);
+  const [selectedHighlight, setSelectedHighlight] = useState<string | null>(null);
   const [showBubbles, setShowBubbles] = useState(true);
+  const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
+  const [isTouching, setIsTouching] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   const threadMap: ThreadMap = {};
   filters.forEach(filter => {
@@ -254,7 +244,9 @@ const PreReqChart = () => {
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (popupRef.current && !popupRef.current.contains(event.target as Node)) {
-        handleClosePopup();
+        if (!showGuidedTour) {
+          handleClosePopup();
+        }
       }
     }
 
@@ -264,7 +256,7 @@ const PreReqChart = () => {
         document.removeEventListener('mousedown', handleClickOutside);
       };
     }
-  }, [selectedCourse]);
+  }, [selectedCourse, showGuidedTour]);
 
   useEffect(() => {
     async function loadData() {
@@ -355,6 +347,21 @@ const PreReqChart = () => {
       y: centerY - (VERTICAL_SPACING * 2),
       scale: INITIAL_ZOOM
     });
+  }, []);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    // Check on initial load
+    checkMobile();
+    
+    // Add event listener for window resize
+    window.addEventListener('resize', checkMobile);
+    
+    // Cleanup
+    return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
   const getConnectionPoint = (course: Course, side: 'left' | 'right' | 'top' | 'bottom' = 'right', isLogicGate: boolean = false) => {
@@ -448,8 +455,126 @@ const PreReqChart = () => {
     }
   };
 
-  const handleCourseClick = async (course: Course) => {
+  // Improved touch event handlers
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      // Single touch for panning
+      setIsTouching(true);
+      setIsDragging(true);
+      setDragStart({
+        x: e.touches[0].clientX - transform.x,
+        y: e.touches[0].clientY - transform.y
+      });
+    } else if (e.touches.length === 2) {
+      // Two touches for pinch zoom
+      const dist = getDistanceBetweenTouches(e);
+      setLastTouchDistance(dist);
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    e.preventDefault(); // Prevent default to avoid scrolling while interacting with the chart
+    
+    if (e.touches.length === 1 && isDragging) {
+      // Handle panning with smoother animation
+      requestAnimationFrame(() => {
+        setTransform((prev) => ({
+          ...prev,
+          x: e.touches[0].clientX - dragStart.x,
+          y: e.touches[0].clientY - dragStart.y
+        }));
+      });
+    } else if (e.touches.length === 2 && lastTouchDistance !== null) {
+      // Handle pinch zoom with smoother animation
+      const newDist = getDistanceBetweenTouches(e);
+      const delta = newDist - lastTouchDistance;
+      
+      // Calculate zoom factor based on pinch distance
+      const zoomFactor = delta * 0.01;
+      const newScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, transform.scale + zoomFactor));
+      
+      // Get the midpoint between the two touches
+      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      
+      if (svgRef.current) {
+        const rect = svgRef.current.getBoundingClientRect();
+        const x = midX - rect.left;
+        const y = midY - rect.top;
+        
+        requestAnimationFrame(() => {
+          setTransform((prev) => ({
+            scale: newScale,
+            x: x - (x - prev.x) * (newScale / prev.scale),
+            y: y - (y - prev.y) * (newScale / prev.scale)
+          }));
+        });
+      }
+      
+      setLastTouchDistance(newDist);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setIsDragging(false);
+    setIsTouching(false);
+    setLastTouchDistance(null);
+  };
+
+  // Helper function to calculate distance between two touch points
+  const getDistanceBetweenTouches = (e: React.TouchEvent) => {
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  // Function to check if a course should be highlighted
+  const shouldHighlight = (courseId: string): boolean => {
+    // During guided tour first step, always highlight CS 1332
+    if (showGuidedTour && courseId === "CS 1332") return true;
+    
+    if (!highlightedCourse && !selectedHighlight) return true;
+    const targetCourse = highlightedCourse || selectedHighlight;
+    if (!targetCourse) return true;
+    const prerequisites = getAllPrerequisites(targetCourse);
+    return prerequisites.has(courseId) || courseId === targetCourse;
+  };
+
+  // Update the course click handler to work better with touch
+  const handleCourseClick = async (course: Course, e?: React.MouseEvent | React.TouchEvent) => {
+    if (e) {
+      e.stopPropagation();
+    }
+    
     if (course.name === "AND" || course.name === "OR") {
+      return;
+    }
+
+    // Don't open course details if we're dragging
+    if (isTouching && isDragging) {
+      return;
+    }
+
+    // During guided tour, only allow clicking CS 1332 and don't close the tour
+    if (showGuidedTour) {
+      if (course.id === "CS 1332") {
+        setSelectedCourse(course);
+        setIsLoading(true);
+        try {
+          let data: CourseEnrollmentData;
+          if (prefetchedData?.courses[course.id]) {
+            data = prefetchedData.courses[course.id];
+          } else {
+            data = await fetchCourseData(course.id);
+          }
+          setEnrollmentData(data);
+        } catch (error) {
+          console.error('Error fetching enrollment data:', error);
+          setEnrollmentData(null);
+        } finally {
+          setIsLoading(false);
+        }
+      }
       return;
     }
 
@@ -491,17 +616,21 @@ const PreReqChart = () => {
   };
 
   const handleClosePopup = () => {
+    // Don't close the popup during guided tour
+    if (showGuidedTour) return;
+    
     setSelectedCourse(null);
     setEnrollmentData(null);
+    setSelectedHighlight(null);
   };
 
-  const handleFilterChange = (threadName: string) => {
+  const handleFilterChange = (thread: Thread) => {
     // Don't allow toggling of required thread
-    if (threadName === 'required') return;
+    if (thread.name === 'required') return;
 
-    setFilters(prev => prev.map(thread => ({
-      ...thread,
-      show: thread.name === threadName ? !thread.show : thread.show
+    setFilters(prev => prev.map(t => ({
+      ...t,
+      show: t.name === thread.name ? !t.show : t.show
     })));
   };
 
@@ -542,7 +671,7 @@ const PreReqChart = () => {
     if (course.name === "AND" || course.name === "OR") {
       return true; // Always show AND/OR nodes
     }
-    return course.id.includes('*') || course.threads.some(threadName => isThreadVisible(threadName));
+    return isThreadVisible(course);
   });
 
   // Update the prerequisites filter
@@ -578,17 +707,25 @@ const PreReqChart = () => {
     return visited;
   };
 
-  // Function to check if a course should be highlighted
-  const shouldHighlight = (courseId: string): boolean => {
-    if (!highlightedCourse) return true;
-    const prerequisites = getAllPrerequisites(highlightedCourse);
-    return prerequisites.has(courseId);
-  };
-
-  // Update course rendering to include highlighting
+  // Update course rendering to include highlighting and improved touch targets
   const renderCourse = (course: Course) => {
     const isHighlighted = shouldHighlight(course.id);
     const opacity = isHighlighted ? "1" : "0.3";
+
+    // Add first step highlight class for CS 1332
+    const extraClasses = showGuidedTour && course.id === "CS 1332" ? "first-step-highlight" : "";
+
+    // Handle click on the course background
+    const handleBackgroundClick = (e: React.MouseEvent | React.TouchEvent) => {
+      e.stopPropagation(); // Prevent event from bubbling to SVG
+      if (!showGuidedTour) {
+        if (selectedHighlight === course.id) {
+          setSelectedHighlight(null); // Deselect if already selected
+        } else {
+          setSelectedHighlight(course.id); // Select this course
+        }
+      }
+    };
 
     // Special rendering for AND/OR nodes
     if (course.name === "AND" || course.name === "OR") {
@@ -653,15 +790,26 @@ const PreReqChart = () => {
 
     const colors = getThreadColors(primaryThread);
 
-    // Regular course rendering
+    // Regular course rendering with improved touch targets
     return (
       <g
         key={course.id}
-        onClick={() => handleCourseClick(course)}
-        onMouseEnter={() => setHighlightedCourse(course.id)}
-        onMouseLeave={() => setHighlightedCourse(null)}
-        style={{ transition: 'opacity 0.3s ease' }}
+        onClick={(e) => {
+          handleBackgroundClick(e);
+          handleCourseClick(course, e);
+        }}
+        onTouchEnd={(e) => {
+          if (!isDragging) {
+            handleBackgroundClick(e);
+            handleCourseClick(course, e);
+          }
+        }}
+        onMouseEnter={() => !selectedHighlight && !showGuidedTour && setHighlightedCourse(course.id)}
+        onMouseLeave={() => !selectedHighlight && !showGuidedTour && setHighlightedCourse(null)}
+        style={{ transition: 'all 0.3s ease', cursor: 'pointer' }}
         opacity={opacity}
+        className={`course-card ${extraClasses}`}
+        data-course-id={course.id}
       >
         <rect
           x={course.x * HORIZONTAL_SPACING - BOX_WIDTH / 2}
@@ -716,10 +864,10 @@ const PreReqChart = () => {
     const toCourse = courses.find((c) => c.id === prereq.to);
 
     if (fromCourse && toCourse) {
-      const isHighlighted = highlightedCourse &&
+      const isHighlighted = (highlightedCourse || selectedHighlight) &&
         shouldHighlight(toCourse.id) &&
         shouldHighlight(fromCourse.id);
-      const opacity = darkMode ? (isHighlighted ? "1" : "0.5") : (isHighlighted ? "1" : "0.3")
+      const opacity = darkMode ? (isHighlighted ? "1" : "0.5") : (isHighlighted ? "1" : "0.3");
 
       return (
         <path
@@ -739,154 +887,202 @@ const PreReqChart = () => {
 
   // Update popup positioning to be next to the course
   const getPopupPosition = (course: Course) => {
-    const x = course.x * 192;
-    const y = course.y * 96;
-    const svgRect = svgRef.current?.getBoundingClientRect();
-
-    if (!svgRect) return { left: '50%', top: '50%', transform: 'translate(-50%, -50%)' };
-
-    const courseX = (x * transform.scale + transform.x);
-    const courseY = (y * transform.scale + transform.y);
-
-    // Position the popup to the right of the course by default
-    let left = courseX + (BOX_WIDTH / 2 * transform.scale) + 20;
-    const top = courseY - 100;
-
-    // If the popup would go off the right edge, position it to the left of the course
-    if (left + 500 > window.innerWidth) {
-      left = courseX - (BOX_WIDTH / 2 * transform.scale) - 520;
+    const x = course.x * HORIZONTAL_SPACING;
+    const y = course.y * VERTICAL_SPACING;
+    
+    // Get the course element's position
+    const courseElement = document.querySelector(`[data-course-id="${course.id}"]`);
+    const courseRect = courseElement?.getBoundingClientRect();
+    
+    if (!courseRect) return { top: 0, left: 0 };
+    
+    // Get the popup dimensions
+    const popupWidth = 300; // Fixed width for the popup
+    const popupHeight = 200; // Approximate height for the popup
+    
+    if (isMobile) {
+      // On mobile, position below the course
+      return {
+        top: courseRect.bottom + 10,
+        left: (window.innerWidth - popupWidth) / 2 // Center horizontally
+      };
+    } else {
+      // On desktop, position to the right of the course
+      let left = courseRect.right + 20;
+      let top = courseRect.top;
+      
+      // If positioning to the right would push it off screen, adjust
+      if (left + popupWidth > window.innerWidth) {
+        left = courseRect.left - popupWidth - 20;
+      }
+      
+      // Ensure the popup stays within the viewport vertically
+      if (top + popupHeight > window.innerHeight) {
+        top = window.innerHeight - popupHeight - 10;
+      }
+      if (top < 10) top = 10;
+      
+      return { top, left };
     }
-
-    // Use both left and top for positioning
-    return {
-      left: `${left}px`,
-      top: `${top}px`,
-      transform: 'none'
-    };
   };
 
-  // Reset handler that uses the same centering logic
+  // Reset handler with animation
   const handleReset = () => {
     const centerX = window.innerWidth / 2;
     const centerY = window.innerHeight / 2;
-    setTransform({
-      x: centerX - (HORIZONTAL_SPACING * 2),
-      y: centerY - (VERTICAL_SPACING * 2),
-      scale: INITIAL_ZOOM
-    });
+    
+    // Add smooth animation to reset
+    const startX = transform.x;
+    const startY = transform.y;
+    const startScale = transform.scale;
+    const endX = centerX - (HORIZONTAL_SPACING * 2);
+    const endY = centerY - (VERTICAL_SPACING * 2);
+    const endScale = INITIAL_ZOOM;
+    
+    const duration = 500; // ms
+    const startTime = Date.now();
+    
+    const animateReset = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      // Easing function for smoother animation
+      const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+      const easedProgress = easeOutCubic(progress);
+      
+      const newX = startX + (endX - startX) * easedProgress;
+      const newY = startY + (endY - startY) * easedProgress;
+      const newScale = startScale + (endScale - startScale) * easedProgress;
+      
+      setTransform({
+        x: newX,
+        y: newY,
+        scale: newScale
+      });
+      
+      if (progress < 1) {
+        requestAnimationFrame(animateReset);
+      }
+    };
+    
+    requestAnimationFrame(animateReset);
   };
 
-  // Update the ThreadBubbles component
-  const ThreadBubbles = () => {
-    const nonRequiredThreads = filters.filter(f => f.name !== 'required');
+  // Add click handler to clear selection when clicking the background
+  const handleSvgClick = (e: React.MouseEvent) => {
+    if (e.target === svgRef.current && !showGuidedTour) {
+      setSelectedHighlight(null);
+    }
+  };
 
-    const getThreadStyle = (thread: Thread) => {
-      if (!(thread.name in COLORS)) {
-        return {
-          className: `px-2 py-1.5 rounded-full flex items-center justify-center cursor-pointer transition-all duration-200 ${
-            darkMode ? 'bg-gray-700 text-gray-200' : 'bg-gray-100 text-gray-700'
-          } ${thread.show ? 'ring-1 ring-offset-1 ring-gray-400 dark:ring-gray-600' : 'opacity-50'}`,
-          style: {}
-        };
-      }
-
-      return {
-        className: `px-2 py-1.5 rounded-full flex items-center justify-center cursor-pointer transition-all duration-200 ${
-          thread.show ? 'ring-1 ring-offset-1 ring-gray-400 dark:ring-gray-600' : 'opacity-50'
-        }`,
-        style: {
-          backgroundColor: darkMode ? COLORS[thread.name].dark.bg : COLORS[thread.name].light.bg,
-          color: darkMode ? COLORS[thread.name].dark.text : COLORS[thread.name].light.text
+  // Update the click outside handler to respect guided tour
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (popupRef.current && !popupRef.current.contains(event.target as Node)) {
+        // Don't close popup when clicking outside during guided tour
+        if (!showGuidedTour) {
+          handleClosePopup();
         }
+      }
+    }
+
+    if (selectedCourse) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
       };
-    };
+    }
+  }, [selectedCourse, showGuidedTour]);
+
+  // Add an overlay to prevent clicking outside during guided tour
+  const renderTourOverlay = () => {
+    if (!showGuidedTour) return null;
 
     return (
-      <>
-        <button
-          onClick={() => setShowBubbles(!showBubbles)}
-          className={`fixed top-20 right-4 px-3 py-2 rounded-lg shadow-md z-20 transition-all duration-200 flex items-center justify-center gap-2 w-40 ${
-            darkMode ? 'bg-gray-800 text-gray-200 hover:bg-gray-700' : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
-          } ${showBubbles ? 'ring-2 ring-blue-500 dark:ring-blue-400' : ''}`}
-          title={showBubbles ? "Hide thread filters" : "Show thread filters"}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L12 11.414V15a1 1 0 01-.293.707l-2 2A1 1 0 018 17v-5.586L3.293 6.707A1 1 0 013 6V3z" clipRule="evenodd" />
-          </svg>
-          <span className="text-sm font-medium">Filter Threads</span>
-        </button>
-
-        <div
-          className={`fixed top-32 right-4 flex flex-col gap-1.5 z-10 transition-all duration-200 items-end ${
-            showBubbles ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-full'
-          }`}
-        >
-          {nonRequiredThreads.map(thread => {
-            const { className, style } = getThreadStyle(thread);
-            return (
-              <div
-                key={thread.name}
-                className={`${className} w-40 flex items-center justify-center`}
-                style={style}
-                onClick={() => handleFilterChange(thread.name)}
-                title={`Toggle ${thread.formalName}`}
-              >
-                <span className="text-xs text-center">{thread.formalName}</span>
-              </div>
-            );
-          })}
-        </div>
-      </>
+      <div 
+        className="fixed inset-0 bg-black bg-opacity-50 z-40"
+        onClick={(e) => e.stopPropagation()}
+      />
     );
   };
 
   return (
-    <div
-      className="fixed inset-0 bg-gray-50 dark:bg-gray-900 transition-colors duration-200"
-    >
+    <div className="fixed inset-0 bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
+      {renderTourOverlay()}
       {/* Thread Bubbles */}
-      <ThreadBubbles />
+      <div className="fixed right-4 top-20 z-50">
+        <ThreadBubbles 
+          filters={filters}
+          handleFilterChange={handleFilterChange}
+          darkMode={darkMode}
+          COLORS={COLORS}
+        />
+      </div>
 
       {/* Onboarding Modal */}
       {showOnboarding && (
         <OnboardingModal
           darkMode={darkMode}
-          onClose={() => setShowOnboarding(false)}
+          onClose={() => {
+            setShowOnboarding(false);
+          }}
+        />
+      )}
+
+      {/* Guided Tour */}
+      {showGuidedTour && (
+        <GuidedTour
+          darkMode={darkMode}
+          onComplete={() => setShowGuidedTour(false)}
+          isMobile={isMobile}
         />
       )}
 
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 h-16 bg-white dark:bg-gray-800 shadow-md z-20 transition-colors duration-200">
-        <div className="max-w-7xl mx-auto px-4 h-full flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <h1 className={`text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
-              GradGT - CS
-            </h1>
-          </div>
+        <div className="h-full flex items-center justify-between px-4">
+          <h1 className={`text-xl sm:text-2xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'} animate-fadeIn`}>
+            GradGT - CS
+          </h1>
 
-          {/* Theme Toggle Button */}
-          <button
-            onClick={() => setDarkMode(!darkMode)}
-            className={`p-2 rounded-full transition-colors duration-200 ${
-              darkMode 
-                ? 'bg-gray-700 hover:bg-gray-600 text-gray-100' 
-                : 'bg-gray-100 hover:bg-gray-200 text-gray-900'
-            }`}
-            title={darkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
-          >
-            {darkMode ? (
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-                <path
-                  d="M12 2.25a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V3a.75.75 0 01.75-.75zM7.5 12a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM18.894 6.166a.75.75 0 00-1.06-1.06l-1.591 1.59a.75.75 0 101.06 1.061l1.591-1.59zM21.75 12a.75.75 0 01-.75.75h-2.25a.75.75 0 010-1.5H21a.75.75 0 01.75.75zM17.834 18.894a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 10-1.061 1.06l1.59 1.591zM12 18a.75.75 0 01.75.75V21a.75.75 0 01-1.5 0v-2.25A.75.75 0 0112 18zM7.758 17.303a.75.75 0 00-1.061-1.06l-1.591 1.59a.75.75 0 001.06 1.061l1.591-1.59zM6 12a.75.75 0 01-.75.75H3a.75.75 0 010-1.5h2.25A.75.75 0 016 12zM6.697 7.757a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 00-1.061 1.06l1.59 1.591z"/>
-              </svg>
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-                <path fillRule="evenodd"
-                      d="M9.528 1.718a.75.75 0 01.162.819A8.97 8.97 0 009 6a9 9 0 009 9 8.97 8.97 0 003.463-.69.75.75 0 01.981.98 10.503 10.503 0 01-9.694 6.46c-5.799 0-10.5-4.701-10.5-10.5 0-4.368 2.667-8.112 6.46-9.694a.75.75 0 01.818.162z"
-                      clipRule="evenodd"/>
-              </svg>
-            )}
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Help Button */}
+            <button
+              onClick={() => setShowGuidedTour(true)}
+              className={`p-2 rounded-full transition-colors duration-200 mobile-nav-button touch-target ${
+                darkMode 
+                  ? 'bg-gray-700 hover:bg-gray-600 text-gray-100' 
+                  : 'bg-gray-100 hover:bg-gray-200 text-gray-900'
+              }`}
+              title="Show Guide"
+            >
+              <HelpCircle className="w-5 h-5" />
+            </button>
+
+            {/* Theme Toggle Button */}
+            <button
+              onClick={() => setDarkMode(!darkMode)}
+              className={`p-2 rounded-full transition-colors duration-200 mobile-nav-button touch-target ${
+                darkMode 
+                  ? 'bg-gray-700 hover:bg-gray-600 text-gray-100' 
+                  : 'bg-gray-100 hover:bg-gray-200 text-gray-900'
+              }`}
+              title={darkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+            >
+              {darkMode ? (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+                  <path
+                    d="M12 2.25a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V3a.75.75 0 01.75-.75zM7.5 12a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM18.894 6.166a.75.75 0 00-1.06-1.06l-1.591 1.59a.75.75 0 101.06 1.061l1.591-1.59zM21.75 12a.75.75 0 01-.75.75h-2.25a.75.75 0 010-1.5H21a.75.75 0 01.75.75zM17.834 18.894a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 10-1.061 1.06l1.59 1.591zM12 18a.75.75 0 01.75.75V21a.75.75 0 01-1.5 0v-2.25A.75.75 0 0112 18zM7.758 17.303a.75.75 0 00-1.061-1.06l-1.591 1.59a.75.75 0 001.06 1.061l1.591-1.59zM6 12a.75.75 0 01-.75.75H3a.75.75 0 010-1.5h2.25A.75.75 0 016 12zM6.697 7.757a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 00-1.061 1.06l1.59 1.591z"/>
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+                  <path fillRule="evenodd"
+                        d="M9.528 1.718a.75.75 0 01.162.819A8.97 8.97 0 009 6a9 9 0 009 9 8.97 8.97 0 003.463-.69.75.75 0 01.981.98 10.503 10.503 0 01-9.694 6.46c-5.799 0-10.5-4.701-10.5-10.5 0-4.368 2.667-8.112 6.46-9.694a.75.75 0 01.818.162z"
+                        clipRule="evenodd"/>
+                </svg>
+              )}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -894,32 +1090,28 @@ const PreReqChart = () => {
       <main className="pt-16 pb-16 h-full">
         {isPrefetching && (
           <div
-            className="fixed top-20 right-4 bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg z-50 transition-colors duration-200">
+            className="fixed top-20 left-4 bg-white dark:bg-gray-800 p-2 rounded-lg shadow-lg z-50 transition-colors duration-200 max-w-[180px] animate-fadeIn">
             <div className="flex items-center gap-2">
               <div
-                className="w-4 h-4 border-2 border-blue-500 border-t-transparent dark:border-blue-400 dark:border-t-transparent rounded-full animate-spin"></div>
+                className="w-3 h-3 border-2 border-blue-500 border-t-transparent dark:border-blue-400 dark:border-t-transparent rounded-full animate-spin"></div>
               <span
-                className="text-gray-700 dark:text-gray-200">Prefetching course data: {prefetchProgress}%</span>
+                className="text-xs text-gray-700 dark:text-gray-200">Prefetching: {prefetchProgress}%</span>
             </div>
           </div>
         )}
 
         {/* Zoom Controls */}
-        <div className="absolute bottom-20 right-4 flex flex-col gap-2 z-10">
+        <div className="fixed bottom-20 right-4 flex flex-col gap-2 z-10">
           <button
             onClick={() => setTransform(prev => ({
               ...prev,
               scale: Math.max(MIN_ZOOM, prev.scale - ZOOM_STEP)
             }))}
             className="p-2.5 shadow rounded-lg bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700
-           text-gray-700 dark:text-gray-200 transition-colors"
+           text-gray-700 dark:text-gray-200 transition-colors mobile-nav-button touch-target"
             title="Zoom Out"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 className="w-5 h-5">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7"/>
-            </svg>
+            <ZoomOut className="w-5 h-5" />
           </button>
           <button
             onClick={() => setTransform(prev => ({
@@ -927,26 +1119,18 @@ const PreReqChart = () => {
               scale: Math.min(MAX_ZOOM, prev.scale + ZOOM_STEP)
             }))}
             className="p-2.5 shadow rounded-lg bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700
-           text-gray-700 dark:text-gray-200 transition-colors"
+           text-gray-700 dark:text-gray-200 transition-colors mobile-nav-button touch-target"
             title="Zoom In"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 className="w-5 h-5">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7"/>
-            </svg>
+            <ZoomIn className="w-5 h-5" />
           </button>
           <button
             onClick={handleReset}
             className="p-2.5 shadow rounded-lg bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700
-           text-gray-700 dark:text-gray-200 transition-colors"
+           text-gray-700 dark:text-gray-200 transition-colors mobile-nav-button touch-target"
             title="Reset View"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 className="w-5 h-5">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
-            </svg>
+            <House className="w-5 h-5" />
           </button>
         </div>
 
@@ -954,12 +1138,18 @@ const PreReqChart = () => {
           ref={svgRef}
           width="100%"
           height="100%"
-          className={`absolute inset-0 cursor-grab touch-none ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}
+          className={`absolute inset-0 touch-none ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
           onWheel={handleWheel}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
+          onClick={handleSvgClick}
+          style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
         >
           <g transform={`translate(${transform.x}, ${transform.y}) scale(${transform.scale})`}>
             <defs>
@@ -984,27 +1174,28 @@ const PreReqChart = () => {
       </main>
 
       {/* Footer */}
-      <footer
-        className="fixed bottom-0 left-0 right-0 h-16 bg-white dark:bg-gray-800 shadow-md z-20 transition-colors duration-200">
-        <div className="max-w-7xl mx-auto px-4 h-full flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+      <footer className="fixed bottom-0 left-0 right-0 h-16 bg-white dark:bg-gray-800 shadow-md z-20 transition-colors duration-200">
+        <div className="h-full flex items-center justify-between px-4">
+          <div className="flex items-center gap-2">
+            <span className={`text-xs sm:text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
               Made by{' '}
               <a href="https://www.linkedin.com/in/vineethsendilraj/" target="_blank" rel="noopener noreferrer"
                  className={`underline ${darkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-600 hover:text-gray-800'}`}>
                 Vineeth Sendilraj
               </a>
-              ,{' '}
-              <a href="https://www.linkedin.com/in/vivek-vishwanath1/" target="_blank" rel="noopener noreferrer"
-                 className={`underline ${darkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-600 hover:text-gray-800'}`}>
-                Vivek Vishwanath
-              </a>
-              , and{' '}
-              <a href="https://www.linkedin.com/in/daveh-day/" target="_blank" rel="noopener noreferrer"
-                 className={`underline ${darkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-600 hover:text-gray-800'}`}>
-                Daveh Day
-              </a>
-              , under the direction of Dr. Mary Hudachek-Buswell
+              <span className="hidden sm:inline">
+                ,{' '}
+                <a href="https://www.linkedin.com/in/vivek-vishwanath1/" target="_blank" rel="noopener noreferrer"
+                  className={`underline ${darkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-600 hover:text-gray-800'}`}>
+                  Vivek Vishwanath
+                </a>
+                , and{' '}
+                <a href="https://www.linkedin.com/in/daveh-day/" target="_blank" rel="noopener noreferrer"
+                  className={`underline ${darkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-600 hover:text-gray-800'}`}>
+                  Daveh Day
+                </a>
+                , under the direction of Dr. Mary Hudachek-Buswell
+              </span>
             </span>
           </div>
           <a
@@ -1022,48 +1213,17 @@ const PreReqChart = () => {
         </div>
       </footer>
 
-      {/* Popup with dark mode support */}
+      {/* Course Info Popup */}
       {selectedCourse && (
-        <div
-          className="fixed z-20"
-          style={getPopupPosition(selectedCourse)}
-          ref={popupRef}
-        >
-          <Card className={`w-[500px] ${darkMode ? 'bg-gray-800 text-gray-100' : 'bg-white'}`}>
-            <CardHeader>
-              <CardTitle>{selectedCourse.id} - {selectedCourse.name}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <div className="flex justify-center items-center py-8">
-                  <div className={`w-12 h-12 border-4 ${darkMode ? 'border-gray-700 border-t-gray-300' : 'border-blue-200 border-t-blue-500'} rounded-full animate-spin`}></div>
-                </div>
-              ) : enrollmentData ? (
-                <div className="space-y-6">
-                  <div>
-                    <h3 className={`text-lg font-semibold mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                      Enrollment History
-                    </h3>
-                    <div className="space-y-2">
-                      <p>Current Semester: {enrollmentData.currentEnrollment || 'N/A'}</p>
-                      <p>Previous Semester: {enrollmentData.pastEnrollment || 'N/A'}</p>
-                      <p>One Year Ago: {enrollmentData.yearAgoEnrollment || 'N/A'}</p>
-                      <p>Three Semesters Ago: {enrollmentData.threeTermsAgoEnrollment || 'N/A'}</p>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-red-500">Error loading course data</p>
-              )}
-              <button
-                onClick={handleClosePopup}
-                className={`mt-4 px-4 py-2 rounded ${darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'}`}
-              >
-                Close
-              </button>
-            </CardContent>
-          </Card>
-        </div>
+        <CourseInfoCard
+          course={selectedCourse}
+          enrollmentData={enrollmentData}
+          isLoading={isLoading}
+          darkMode={darkMode}
+          isMobile={isMobile}
+          onClose={handleClosePopup}
+          position={getPopupPosition(selectedCourse)}
+        />
       )}
     </div>
   );
