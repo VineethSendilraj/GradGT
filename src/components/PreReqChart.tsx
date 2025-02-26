@@ -1,7 +1,6 @@
 "use client";
 
-import React, {useEffect, useRef, useState} from 'react';
-import {Card, CardContent, CardHeader, CardTitle} from './ui/card';
+import React, {useEffect, useRef, useState, useCallback} from 'react';
 import data from "../../data/course.json";
 import type {CourseEnrollmentData} from '@/lib/api';
 import {fetchCourseData} from '@/lib/api';
@@ -9,7 +8,7 @@ import {prefetchAllCourseData, type PrefetchedData} from '@/lib/prefetch';
 import OnboardingModal from './OnboardingModal';
 import GuidedTour from './GuidedTour';
 import ThreadBubbles from './ThreadBubbles';
-import { CourseType, Thread, Theme, ThemeModes } from './types';
+import { CourseType, Thread } from './types';
 import { House, ZoomIn, ZoomOut, HelpCircle } from 'lucide-react';
 import CourseInfoCard from './CourseInfoCard';
 
@@ -231,7 +230,6 @@ const PreReqChart = () => {
   const [filters, setFilters] = useState<Thread[]>(threads);
   const [highlightedCourse, setHighlightedCourse] = useState<string | null>(null);
   const [selectedHighlight, setSelectedHighlight] = useState<string | null>(null);
-  const [showBubbles, setShowBubbles] = useState(true);
   const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
   const [isTouching, setIsTouching] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -240,6 +238,15 @@ const PreReqChart = () => {
   filters.forEach(filter => {
     threadMap[filter.name] = filter;
   });
+
+  const handleClosePopup = useCallback(() => {
+    // Don't close the popup during guided tour
+    if (showGuidedTour) return;
+    
+    setSelectedCourse(null);
+    setEnrollmentData(null);
+    setSelectedHighlight(null);
+  }, [showGuidedTour]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -256,7 +263,7 @@ const PreReqChart = () => {
         document.removeEventListener('mousedown', handleClickOutside);
       };
     }
-  }, [selectedCourse, showGuidedTour]);
+  }, [selectedCourse, showGuidedTour, handleClosePopup]);
 
   useEffect(() => {
     async function loadData() {
@@ -615,15 +622,6 @@ const PreReqChart = () => {
     }
   };
 
-  const handleClosePopup = () => {
-    // Don't close the popup during guided tour
-    if (showGuidedTour) return;
-    
-    setSelectedCourse(null);
-    setEnrollmentData(null);
-    setSelectedHighlight(null);
-  };
-
   const handleFilterChange = (thread: Thread) => {
     // Don't allow toggling of required thread
     if (thread.name === 'required') return;
@@ -887,36 +885,27 @@ const PreReqChart = () => {
 
   // Update popup positioning to be next to the course
   const getPopupPosition = (course: Course) => {
-    const x = course.x * HORIZONTAL_SPACING;
-    const y = course.y * VERTICAL_SPACING;
-    
-    // Get the course element's position
     const courseElement = document.querySelector(`[data-course-id="${course.id}"]`);
     const courseRect = courseElement?.getBoundingClientRect();
     
     if (!courseRect) return { top: 0, left: 0 };
     
-    // Get the popup dimensions
-    const popupWidth = 300; // Fixed width for the popup
-    const popupHeight = 200; // Approximate height for the popup
+    const popupWidth = 300;
+    const popupHeight = 200;
     
     if (isMobile) {
-      // On mobile, position below the course
       return {
         top: courseRect.bottom + 10,
-        left: (window.innerWidth - popupWidth) / 2 // Center horizontally
+        left: (window.innerWidth - popupWidth) / 2
       };
     } else {
-      // On desktop, position to the right of the course
       let left = courseRect.right + 20;
       let top = courseRect.top;
       
-      // If positioning to the right would push it off screen, adjust
       if (left + popupWidth > window.innerWidth) {
         left = courseRect.left - popupWidth - 20;
       }
       
-      // Ensure the popup stays within the viewport vertically
       if (top + popupHeight > window.innerHeight) {
         top = window.innerHeight - popupHeight - 10;
       }
@@ -972,27 +961,45 @@ const PreReqChart = () => {
   const handleSvgClick = (e: React.MouseEvent) => {
     if (e.target === svgRef.current && !showGuidedTour) {
       setSelectedHighlight(null);
+      handleClosePopup();
     }
   };
 
-  // Update the click outside handler to respect guided tour
+  // Handle clicks outside the course info card
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (popupRef.current && !popupRef.current.contains(event.target as Node)) {
-        // Don't close popup when clicking outside during guided tour
-        if (!showGuidedTour) {
-          handleClosePopup();
-        }
-      }
-    }
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      // Don't handle if we're in guided tour
+      if (showGuidedTour) return;
 
+      // Don't handle if we're dragging
+      if (isDragging) return;
+
+      // Get the clicked element
+      const target = event.target as Element;
+
+      // Check if the click is on the SVG or its background
+      const isSvgClick = svgRef.current && target === svgRef.current;
+      
+      // Check if click is outside the popup and not on a course
+      if (selectedCourse && 
+          !target.closest('.course-card') && // Not clicking a course
+          !popupRef.current?.contains(target) && // Not clicking the popup
+          (isSvgClick || !target.closest('svg'))) { // Clicking SVG background or outside SVG
+        handleClosePopup();
+      }
+    };
+
+    // Add listeners if we have a selected course
     if (selectedCourse) {
       document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
+
       return () => {
         document.removeEventListener('mousedown', handleClickOutside);
+        document.removeEventListener('touchstart', handleClickOutside);
       };
     }
-  }, [selectedCourse, showGuidedTour]);
+  }, [selectedCourse, showGuidedTour, isDragging, handleClosePopup]);
 
   // Add an overlay to prevent clicking outside during guided tour
   const renderTourOverlay = () => {

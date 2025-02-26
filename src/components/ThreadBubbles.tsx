@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Thread, CourseType } from './types';
 import { Check, Filter, X } from 'lucide-react';
 
@@ -6,7 +6,20 @@ interface ThreadBubblesProps {
   filters: Thread[];
   handleFilterChange: (thread: Thread) => void;
   darkMode: boolean;
-  COLORS: Record<string, any>;
+  COLORS: {
+    [K in CourseType]: {
+      light: {
+        bg: string;
+        text: string;
+        textSecondary: string;
+      };
+      dark: {
+        bg: string;
+        text: string;
+        textSecondary: string;
+      };
+    };
+  };
 }
 
 const ThreadBubbles: React.FC<ThreadBubblesProps> = ({
@@ -17,7 +30,6 @@ const ThreadBubbles: React.FC<ThreadBubblesProps> = ({
 }) => {
   const [showFiltersPanel, setShowFiltersPanel] = useState(false);
   const [hoveredThread, setHoveredThread] = useState<string | null>(null);
-  const [isMobile, setIsMobile] = useState(false);
   
   // Create thread objects from COLORS keys
   const displayThreads = Object.keys(COLORS)
@@ -28,24 +40,9 @@ const ThreadBubbles: React.FC<ThreadBubblesProps> = ({
         name: threadName as CourseType,
         formalName: threadName.charAt(0).toUpperCase() + threadName.slice(1),
         show: false,
-        theme: COLORS[threadName]
+        theme: COLORS[threadName as CourseType]
       };
     });
-  
-  useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768);
-    };
-    
-    // Check on initial load
-    checkMobile();
-    
-    // Add event listener for window resize
-    window.addEventListener('resize', checkMobile);
-    
-    // Cleanup
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
   
   const getThreadStyle = (thread: Thread) => {
     const isSelected = filters.some(t => t.name === thread.name && t.show);

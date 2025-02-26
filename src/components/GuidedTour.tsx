@@ -1,11 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 
-interface TourStep {
-  target: string;
-  content: string;
-  position: 'top' | 'bottom' | 'left' | 'right';
-}
-
 interface GuidedTourProps {
   darkMode: boolean;
   onComplete: () => void;
