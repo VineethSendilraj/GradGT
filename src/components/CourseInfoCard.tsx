@@ -1,7 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { CourseEnrollmentData } from '@/lib/api';
-import { CourseType } from './types';
 
 interface Course {
   id: string;
