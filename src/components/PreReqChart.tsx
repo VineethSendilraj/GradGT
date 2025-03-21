@@ -831,6 +831,80 @@ const PreReqChart = () => {
           strokeWidth="1"
         />
 
+        {/* Thread indicator for courses with multiple threads */}
+        {course.threads.length > 1 && (
+          <g>
+            {course.threads.length <= 3 ? (
+              // For courses with 2-3 threads, show small stacked circles
+              course.threads.slice(1).map((threadName, idx) => {
+                // Skip empty thread names
+                if (!threadName) return null;
+                
+                const threadColors = getThreadColors(threadName);
+                const CIRCLE_RADIUS = 5;
+                const OFFSET = 3; // Slight offset for stacked appearance
+                
+                return (
+                  <circle
+                    key={`thread-${idx}`}
+                    cx={course.x * HORIZONTAL_SPACING + BOX_WIDTH / 2 - CORNER_RADIUS - CIRCLE_RADIUS - 2}
+                    cy={course.y * VERTICAL_SPACING - BOX_HEIGHT / 2 + CORNER_RADIUS + (idx * OFFSET)}
+                    r={CIRCLE_RADIUS}
+                    fill={threadColors.bg}
+                    stroke={darkMode ? "#4b5563" : "#e5e7eb"}
+                    strokeWidth="1"
+                    opacity={isThreadVisible({id: course.id, name: course.name, short_name: course.short_name, x: course.x, y: course.y, threads: [threadName]}) ? 1 : 0.4}
+                  />
+                );
+              })
+            ) : (
+              // For courses with 4+ threads, show a counter with the first two thread colors
+              <>
+                {/* Background for the thread counter */}
+                <rect
+                  x={course.x * HORIZONTAL_SPACING + BOX_WIDTH / 2 - 26}
+                  y={course.y * VERTICAL_SPACING - BOX_HEIGHT / 2 + 4}
+                  width={22}
+                  height={16}
+                  rx={8}
+                  fill={darkMode ? "#374151" : "#f3f4f6"}
+                  stroke={darkMode ? "#4b5563" : "#e5e7eb"}
+                  strokeWidth="1"
+                />
+                
+                {/* Thread color indicators */}
+                {course.threads.slice(1, 3).map((threadName, idx) => {
+                  if (!threadName) return null;
+                  const threadColors = getThreadColors(threadName);
+                  return (
+                    <circle
+                      key={`thread-marker-${idx}`}
+                      cx={course.x * HORIZONTAL_SPACING + BOX_WIDTH / 2 - 20 + (idx * 7)}
+                      cy={course.y * VERTICAL_SPACING - BOX_HEIGHT / 2 + 12}
+                      r={3}
+                      fill={threadColors.bg}
+                      stroke={darkMode ? "#4b5563" : "#e5e7eb"}
+                      strokeWidth="0.5"
+                    />
+                  );
+                })}
+                
+                {/* Counter text */}
+                <text
+                  x={course.x * HORIZONTAL_SPACING + BOX_WIDTH / 2 - 10}
+                  y={course.y * VERTICAL_SPACING - BOX_HEIGHT / 2 + 14}
+                  textAnchor="middle"
+                  fontSize="9"
+                  fontWeight="bold"
+                  fill={darkMode ? "#e5e7eb" : "#374151"}
+                >
+                  +{course.threads.length - 1}
+                </text>
+              </>
+            )}
+          </g>
+        )}
+
         <text
           x={course.x * HORIZONTAL_SPACING}
           y={course.y * VERTICAL_SPACING - BOX_HEIGHT / 2 + ID_SECTION_HEIGHT/2 + 6}
@@ -890,26 +964,43 @@ const PreReqChart = () => {
     
     if (!courseRect) return { top: 0, left: 0 };
     
-    const popupWidth = 300;
-    const popupHeight = 200;
+    const popupWidth = 280; // Updated to match new card width
+    const popupHeight = 250; // Approximate card height
+    const padding = 15;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
     
     if (isMobile) {
       return {
-        top: courseRect.bottom + 10,
-        left: (window.innerWidth - popupWidth) / 2
+        top: Math.min(courseRect.bottom + padding, viewportHeight - popupHeight - padding),
+        left: (viewportWidth - popupWidth) / 2
       };
     } else {
-      let left = courseRect.right + 20;
+      // Try positioning to the right
+      let left = courseRect.right + padding;
+      
+      // If it would go off the right edge, position to the left
+      if (left + popupWidth + padding > viewportWidth) {
+        left = courseRect.left - popupWidth - padding;
+      }
+      
+      // If still off-screen (window too narrow), center horizontally
+      if (left < padding) {
+        left = Math.max(padding, (viewportWidth - popupWidth) / 2);
+      }
+      
+      // Vertical positioning, prefer aligning with the top of the course card
       let top = courseRect.top;
       
-      if (left + popupWidth > window.innerWidth) {
-        left = courseRect.left - popupWidth - 20;
+      // If it would go off the bottom, align to bottom of viewport minus padding
+      if (top + popupHeight + padding > viewportHeight) {
+        top = viewportHeight - popupHeight - padding;
       }
       
-      if (top + popupHeight > window.innerHeight) {
-        top = window.innerHeight - popupHeight - 10;
+      // Never let it go above the top padding
+      if (top < padding) {
+        top = padding;
       }
-      if (top < 10) top = 10;
       
       return { top, left };
     }
@@ -1230,6 +1321,7 @@ const PreReqChart = () => {
           isMobile={isMobile}
           onClose={handleClosePopup}
           position={getPopupPosition(selectedCourse)}
+          COLORS={COLORS}
         />
       )}
     </div>
